@@ -1,0 +1,6 @@
+pyserial
+bokeh
+requests
+flask
+flask-socketio
+eventlet
