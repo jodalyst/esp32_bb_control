@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.3/jquery.min.js"></script>
+  <script src="/static/socket.io.js"></script>
+  <script src="/static/div_render.js" ></script>
+  <link rel="stylesheet" href="/static/gui.css">
+<link
+    href="http://cdn.pydata.org/bokeh/release/bokeh-0.12.7.min.css"
+    rel="stylesheet" type="text/css">
+<link
+    href="http://cdn.pydata.org/bokeh/release/bokeh-widgets-0.12.7.min.css"
+    rel="stylesheet" type="text/css">
+
+<script src="http://cdn.pydata.org/bokeh/release/bokeh-0.12.7.min.js"></script>
+<script src="http://cdn.pydata.org/bokeh/release/bokeh-widgets-0.12.7.min.js"></script>
+
+</head>
+<body>
+
+<p>Breadboard images sent up on a websocket</p>
+  <div >
+    <div id="plotbox"></div>
+
+  </div>
+
+<script>
+var mouseX, mouseY;
+$(document).mousemove(function(e){
+        mouseX = e.pageX;
+        mouseY = e.pageY;
+});
+
+var PLOT_HEIGHT = 200;
+var PLOT_WIDTH = 300;
+var plot;
+var plot2;
+window.onload = function(){
+    var socket = io('http://localhost:3000');
+    var unique = 456;
+    plot = new Div_Render("plotbox",'Breadboard Voltages',PLOT_WIDTH, PLOT_HEIGHT,unique,socket);
+    console.log("created");
+}
+</script>
+
+</body>
+
+
+</html>
