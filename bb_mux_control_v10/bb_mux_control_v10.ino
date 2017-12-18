@@ -7,6 +7,7 @@ int mode;
 int values[50];
 int average;
 int sum;
+long unsigned int delay_modifier;
 
 int myChannel[16][4] = {
   {0,0,0,0}, //channel 0
@@ -144,7 +145,7 @@ void Calculation(int mode1, int low, int high){
       int duration = 2000000;    //desired time to wait to acquire data in us
       delay_step = (1000000/high);    //(1/f_sampling)
       int numberOfSamples = duration/delay_step;   //desired # of samples
-      elapsedMicros delay_modifier;    //keeping track of the delay
+      delay_modifier = millis();    //keeping track of the delay
       central_mux_channel = low/16;
       aux_mux_channel = low - (central_mux_channel*16);
       for (int sel = 0; sel < 4; sel++){ //Control the channel of the connecting mux
