@@ -98,8 +98,12 @@ void loop() {
    // }
  
  //   http.end();   
+    int current_index=0;
+    int new_index = payload.indexOf("&",current_index);
+    int task_id = payload.substring(current_index,new_index).toInt();
+    String task = payload.substring(new_index);
 
-if (payload == "ALL") //Understands the type of request
+if (task == "ALL") //Understands the type of request
 {
     StaticJsonBuffer<300> JSONbuffer;   
     JsonObject& JSONencoder = JSONbuffer.createObject(); 
