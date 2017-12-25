@@ -1,6 +1,13 @@
+#include <stdio.h>
+#include <string.h>
+
+#define write_buffer_size 4096
+
 //order: S0,S1,S2,S3
 
 /* This code is meant for the Teensy, but will be ported to the ESP32 as needed*/
+
+char write_buffer[write_buffer_size];
 
 int centralPins[] = {12,11,10,9};
 int auxPins[] = {8,7,6,5};
@@ -75,18 +82,15 @@ void loop() {
   if (stringComplete){
     processString(commandString);
     Serial.print(type);Serial.print(" ");Serial.print(count);Serial.print(" ");Serial.println(sampling_period);
-    upstreamStr = "";     //empty the sent string so no addition information will be overlap
     Calculation(mode,low_val,high_val); 
-    low_val = 0;
-    high_val = 0;
     commandString = "";
     stringComplete = false;
   }
 }
 
-int readChannel(int channel){
+
+void setChannel(int channel){
   for (int j = 0; j < 4; j++) digitalWrite(centralPins[j],myChannel[channel][j]);
-  return adc->analogRead(SIG_pin);
 }
 
 void serialEvent() {
@@ -131,16 +135,20 @@ bool processString(String pro_String){
 bool Calculation(){
   if (type==-1){//all reading
 
-  }else{
-
-    
+  }else{  //pin specific reading!
+    unsigned long timeo;
+    setChannel(pin);//
+    sprintf(write_buffer,"[");
+    timeo = micros();
+    for(int i=0; i<count; i++){
+      sprintf(write_buffer+strlen(write_buffer),"%d%s",adc->analogRead(SIG_pin),i<count-1?",":"");
+    }
+    sprintf(write_buffer+strlen(write_Buffer),"]");
   }
-
-  
 }
 
 
-
+/*
 void Calculation(int mode1, int low, int high){
     int pin = low;
 
@@ -184,4 +192,5 @@ void Calculation(int mode1, int low, int high){
     }
     complete = true; 
 }
+*/
 
