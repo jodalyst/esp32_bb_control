@@ -11,6 +11,7 @@ int values[50];
 int average;
 int sum;
 
+
 int myChannel[16][4] = {
   {0,0,0,0}, //channel 0
   {1,0,0,0}, //channel 1
@@ -30,14 +31,21 @@ int myChannel[16][4] = {
   {1,1,1,1}  //channel 15
 };
 
+
+int type;
+int count; //
+int sampling_period;
+
+ADC *adc = new ADC(); // adc object
+
 String commandString;
 boolean stringComplete = false;
 
 
 uint16_t meas[129];
 
-String upstreamStr;
-String downstreamStr;
+String upstreamStr;  //String to send up
+String downstreamStr; //string coming down from computer
 boolean complete = false;
 int low_val = 0;
 int high_val = 0;
@@ -60,14 +68,13 @@ void setup() {
 void loop() {  
   //simple command query checking
   if (complete){
-    Serial.println(upstreamStr);
+    Serial.println(upstreamStr); //send message up to host computer
     complete = false;
   }
   serialEvent();
   if (stringComplete){
     processString(commandString);
-    Serial.println(low_val);
-    Serial.println(high_val);
+    Serial.print(type);Serial.print(" ");Serial.print(count);Serial.print(" ");Serial.println(sampling_period);
     upstreamStr = "";     //empty the sent string so no addition information will be overlap
     Calculation(mode,low_val,high_val); 
     low_val = 0;
@@ -79,7 +86,7 @@ void loop() {
 
 int readChannel(int channel){
   for (int j = 0; j < 4; j++) digitalWrite(centralPins[j],myChannel[channel][j]);
-  return analogRead(SIG_pin);
+  return adc->analogRead(SIG_pin);
 }
 
 void serialEvent() {
@@ -96,29 +103,43 @@ void serialEvent() {
     }
   }
 }
-
-void processString(String pro_String){
-  if (pro_String.equalsIgnoreCase("all")){
-    mode = 1;
-    Serial.println("mode1");
-  }else if (pro_String.equalsIgnoreCase("off")){
-      digitalWrite(EN_pin,HIGH);
-  }else if (pro_String.equalsIgnoreCase("on")){
-     digitalWrite(EN_pin,LOW);
-  }else{
-      String temp;
-      for (int h = 0; h < commandString.length(); h++){
-        if (commandString[h] == ','){
-          low_val = high_val;
-          temp = ""; //empty    
-        }else{
-          temp += commandString[h];
-          high_val = (temp.toInt());
-        }
-      }
-      mode = 2;
+//Two types of incoming commands:
+//all,count,sampling_period
+//pin,count,sampling_period
+bool processString(String pro_String){
+  type = -1; //set to -1 as sentinel for "all" message
+  int current_index = 0;
+  int next_index = pro_String.indexOf(",",current_index);
+  if (next_index==-1){
+    Serial.println("incompatible string. Needs commas");
+    return false;
   }
+  String temp = pro_String.substring(current_index,next_index);
+  if (temp!="all") type = temp.toInt();
+  current_index = next_index;
+  int next_index = pro_String.indexOf(",",current_index+1);
+  if (next_index==-1){
+    Serial.println("incompatible string. Needs commas");
+    return false;
+  }
+  count = pro_String.substring(current_index+1,next_index).toInt();
+  sampling_period = pro_String.substring(next_index+1).toInt();
+  return true;
 }
+
+
+bool Calculation(){
+  if (type==-1){//all reading
+
+  }else{
+
+    
+  }
+
+  
+}
+
+
 
 void Calculation(int mode1, int low, int high){
     int pin = low;
@@ -137,8 +158,6 @@ void Calculation(int mode1, int low, int high){
       }
       //Serial.write((uint8_t*)meas,258);
     }
-    //high_val is the sampling rate
-    //low_val is the index of the node
     if (mode1 == 2){
       unsigned long starto = micros();
       int central_mux_channel, aux_mux_channel,delay_step;
@@ -157,13 +176,7 @@ void Calculation(int mode1, int low, int high){
         while (delay_modifier <= delay_step);
         delay_modifier = 0;
         average = readChannel(central_mux_channel);
-        //upstreamStr += low;
-        //upstreamStr += ":";
-//        downstreamStr += String(micros()-starto);
-//        downstreamStr += ",";
         meas[sampleI]=average;
-//        upstreamStr += average;
-//        upstreamStr += ",";
         sampleI += 1;
       }    
       Serial.write((uint8_t*)meas,256);
