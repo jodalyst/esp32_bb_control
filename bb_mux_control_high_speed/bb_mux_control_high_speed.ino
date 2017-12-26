@@ -131,13 +131,13 @@ bool process_string(String pro_String){
   String temp = pro_String.substring(current_index,next_index);
   if (temp!="all") type = temp.toInt();
   current_index = next_index;
-  int next_index = pro_String.indexOf(",",current_index+1);
+  next_index = pro_String.indexOf(",",current_index+1);
   if (next_index==-1 && DEBUG){
     Serial.println("incompatible string. Needs commas");
     return false;
   }
   count = pro_String.substring(current_index+1,next_index).toInt();
-  if(count>SEQUENTIAL_LIMIT) count=SEQUENTIAL_INPUT;
+      if(count>SEQUENTIAL_LIMIT) count=SEQUENTIAL_LIMIT;
   sampling_period = pro_String.substring(next_index+1).toInt();
   return true;
 }
@@ -165,12 +165,12 @@ bool calc_and_report(){
         unsigned long timeo;
         for (int c=0; c<count;c++){
             full_read();
-            while (micros()-timeo<period); //delay
-            time=micros();
+            while (micros()-timeo<sampling_period); //delay
+            timeo=micros();
         }
     }else{  //pin specific reading!
-        int inner_mux_channel = pin/16;
-        int outer_mux_channel = pin - (inner_mux_channel*16);
+        int inner_mux_channel = type/16;
+        int outer_mux_channel = type - (inner_mux_channel*16);
         unsigned long timeo;
         set_inner_channel(inner_mux_channel);//got to fix that.
         set_outer_channel(outer_mux_channel); 
@@ -178,10 +178,10 @@ bool calc_and_report(){
         timeo = micros();
         for(int i=0; i<count; i++){
             sprintf(write_buffer+strlen(write_buffer),"%d%s",adc->analogRead(SIG_pin),i<count-1?",":"");
-            while (micros()-timeo<period); //delay
-            time=micros();
+            while (micros()-timeo<sampling_period); //delay
+            timeo=micros();
         }
-        sprintf(write_buffer+strlen(write_Buffer),"]");
+        sprintf(write_buffer+strlen(write_buffer),"]");
         Serial.println(write_buffer);
     }
 }
