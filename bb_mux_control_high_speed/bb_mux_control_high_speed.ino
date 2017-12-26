@@ -1,16 +1,22 @@
 #include <stdio.h>
 #include <string.h>
+#include <ADC.h>
 
-#define write_buffer_size 4096
+#define DEBUG true
+#define write_buffer_size 6000
+
+#define SEQUENTIAL_LIMIT 1000
 
 //order: S0,S1,S2,S3
+//This code is meant for the Teensy, but will be ported to the ESP32 as needed
+//Updated last on 12/25/2017 jds
 
-/* This code is meant for the Teensy, but will be ported to the ESP32 as needed*/
 
+//will hold built-up-string for Serial writing.
 char write_buffer[write_buffer_size];
 
-int centralPins[] = {12,11,10,9};
-int auxPins[] = {8,7,6,5};
+int innerPins[] = {12,11,10,9};
+int outerPins[] = {8,7,6,5};
 int SIG_pin = A0;
 int EN_pin = 4;
 int mode;
@@ -38,12 +44,12 @@ int myChannel[16][4] = {
   {1,1,1,1}  //channel 15
 };
 
+//operation variables:
+int type; //current type of reading being made (single node or all)
+int count; //how many samples to take
+int sampling_period; //the period of sampling in microseconds
 
-int type;
-int count; //
-int sampling_period;
-
-ADC *adc = new ADC(); // adc object
+ADC *adc = new ADC(); // adc object 
 
 String commandString;
 boolean stringComplete = false;
@@ -61,10 +67,10 @@ void setup() {
   meas[128]=0xFFFF; //initialize ending value
   for (int i = 0; i < 4; i++)
   {
-    pinMode(centralPins[i],OUTPUT);
-    pinMode(auxPins[i],OUTPUT);
-    digitalWrite(centralPins[i],LOW);
-    digitalWrite(auxPins[i],LOW);
+    pinMode(innerPins[i],OUTPUT);
+    pinMode(outerPins[i],OUTPUT);
+    digitalWrite(innerPins[i],LOW);
+    digitalWrite(outerPins[i],LOW);
   }
   pinMode(EN_pin,OUTPUT);  //EN pin
   digitalWrite(EN_pin,LOW); //EN pin 
@@ -78,19 +84,23 @@ void loop() {
     Serial.println(upstreamStr); //send message up to host computer
     complete = false;
   }
-  serialEvent();
-  if (stringComplete){
-    processString(commandString);
+  serialEvent(); //check if an event occurred
+  if (stringComplete){ //if it did happen
+    process_string(commandString); //figure out what you need to do.
     Serial.print(type);Serial.print(" ");Serial.print(count);Serial.print(" ");Serial.println(sampling_period);
-    Calculation(mode,low_val,high_val); 
+    calc_and_report(); 
     commandString = "";
     stringComplete = false;
   }
 }
 
 
-void setChannel(int channel){
-  for (int j = 0; j < 4; j++) digitalWrite(centralPins[j],myChannel[channel][j]);
+void set_inner_channel(int channel){
+  for (int j = 0; j < 4; j++) digitalWrite(innerPins[j],myChannel[channel][j]);
+}
+
+void set_outer_channel(int channel){
+    for (int j = 0; j < 4; j++) digitalWrite(outerPins[j],myChannel[channel][j]);
 }
 
 void serialEvent() {
@@ -99,7 +109,7 @@ void serialEvent() {
     char inChar = (char)Serial.read();
     if (inChar == '*') {
       stringComplete = true;
-      Serial.println("found");
+      if(DEBUG) Serial.println("found");
       break;
     }
     else{
@@ -110,11 +120,11 @@ void serialEvent() {
 //Two types of incoming commands:
 //all,count,sampling_period
 //pin,count,sampling_period
-bool processString(String pro_String){
+bool process_string(String pro_String){
   type = -1; //set to -1 as sentinel for "all" message
   int current_index = 0;
   int next_index = pro_String.indexOf(",",current_index);
-  if (next_index==-1){
+  if (next_index==-1 && DEBUG){
     Serial.println("incompatible string. Needs commas");
     return false;
   }
@@ -122,75 +132,56 @@ bool processString(String pro_String){
   if (temp!="all") type = temp.toInt();
   current_index = next_index;
   int next_index = pro_String.indexOf(",",current_index+1);
-  if (next_index==-1){
+  if (next_index==-1 && DEBUG){
     Serial.println("incompatible string. Needs commas");
     return false;
   }
   count = pro_String.substring(current_index+1,next_index).toInt();
+  if(count>SEQUENTIAL_LIMIT) count=SEQUENTIAL_INPUT;
   sampling_period = pro_String.substring(next_index+1).toInt();
   return true;
 }
 
 
-bool Calculation(){
-  if (type==-1){//all reading
 
-  }else{  //pin specific reading!
-    unsigned long timeo;
-    setChannel(pin);//
+
+void full_read(){
     sprintf(write_buffer,"[");
-    timeo = micros();
-    for(int i=0; i<count; i++){
-      sprintf(write_buffer+strlen(write_buffer),"%d%s",adc->analogRead(SIG_pin),i<count-1?",":"");
-    }
-    sprintf(write_buffer+strlen(write_Buffer),"]");
-  }
-}
-
-
-/*
-void Calculation(int mode1, int low, int high){
-    int pin = low;
-
-    if (mode1 == 1){
-      int count = 0;
-      for (int i = 0; i < 8; i++){ //Read channel 0-7 of the central mux
-        for (int j = 0; j < 16; j++){
-          for (int sel = 0; sel < 4; sel++){ //Control the channel of the connecting mux
-            digitalWrite(auxPins[sel],myChannel[j][sel]);
-          }
-          meas[count] = readChannel(i);
-          pin++;
-          count++;    
+    int iter_count = 0;
+    for (int cm = 0; cm < 8; cm++){ //Read channel 0-7 of the inner mux
+        set_inner_channel(cm);
+        for (int om = 0; om < 16; om++){ 
+            set_outer_channel(om);
         }
-      }
-      //Serial.write((uint8_t*)meas,258);
+        sprintf(write_buffer+strlen(write_buffer),"%d%s",adc->analogRead(SIG_pin),iter_count<127?",":"");
+        iter_count++;
     }
-    if (mode1 == 2){
-      unsigned long starto = micros();
-      int central_mux_channel, aux_mux_channel,delay_step;
-      int duration = 20000;    //desired time to wait to acquire data in us
-      delay_step = (1000000/high)-1;    //(1/f_sampling)
-      int numberOfSamples = duration/delay_step;   //desired # of samples
-      elapsedMicros delay_modifier;    //keeping track of the delay
-      central_mux_channel = low/16;
-      aux_mux_channel = low - (central_mux_channel*16);
-      for (int sel = 0; sel < 4; sel++){ //Control the channel of the connecting mux
-         digitalWrite(auxPins[sel],myChannel[aux_mux_channel][sel]);
-      }
-      int sampleI = 0;
-
-      while (sampleI < numberOfSamples){
-        while (delay_modifier <= delay_step);
-        delay_modifier = 0;
-        average = readChannel(central_mux_channel);
-        meas[sampleI]=average;
-        sampleI += 1;
-      }    
-      Serial.write((uint8_t*)meas,256);
-      //Serial.println(micros()-starto);  
-    }
-    complete = true; 
+    sprintf(write_buffer+strlen(write_buffer),"]");
+    Serial.println(write_buffer);
 }
-*/
 
+bool calc_and_report(){
+    if (type==-1){//all reading
+        unsigned long timeo;
+        for (int c=0; c<count;c++){
+            full_read();
+            while (micros()-timeo<period); //delay
+            time=micros();
+        }
+    }else{  //pin specific reading!
+        int inner_mux_channel = pin/16;
+        int outer_mux_channel = pin - (inner_mux_channel*16);
+        unsigned long timeo;
+        set_inner_channel(inner_mux_channel);//got to fix that.
+        set_outer_channel(outer_mux_channel); 
+        sprintf(write_buffer,"[");
+        timeo = micros();
+        for(int i=0; i<count; i++){
+            sprintf(write_buffer+strlen(write_buffer),"%d%s",adc->analogRead(SIG_pin),i<count-1?",":"");
+            while (micros()-timeo<period); //delay
+            time=micros();
+        }
+        sprintf(write_buffer+strlen(write_Buffer),"]");
+        Serial.println(write_buffer);
+    }
+}
