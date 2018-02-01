@@ -1,8 +1,9 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-
 #include <WiFiMulti.h>
+
+#include <time.h>
 
 #define SERIAL_BAUD       115200
 #define WIFI_DELAY        500
@@ -12,6 +13,7 @@
 char ssid[MAX_SSID_LEN] = "";
 
 WiFiMulti wm;
+//clock_t currentTime = clock();
 
 /* Scan available networks and sort them in order to their signal strength. */
 void scanAndSort() {
@@ -60,11 +62,12 @@ void setup() {
   Serial.println("Started.");
 }
 
+
+
 void loop() {
 
-  //if (WiFi.status() != WL_CONNECTED) {
+  //Connect to Wifi if not connnected
   if (wm.run() != WL_CONNECTED) {
-  //while (wm.run() != WL_CONNECTED) {
     WiFi.softAPdisconnect();
     WiFi.disconnect();
     WiFi.mode(WIFI_STA);
@@ -77,99 +80,228 @@ void loop() {
     if (strlen(ssid) > 0) {
       Serial.print("Going to connect for : ");
       Serial.println(ssid);
+      //Serial.println("6s08");
 
-      WiFi.begin(ssid); //renee
-      wm.addAP(ssid, "none"); //renee
+      WiFi.begin(ssid);
+      wm.addAP(ssid, "none");
+      //wm.addAP("6s08", "REDACTED");
       unsigned short try_cnt = 0;
 
-      Serial.println("wm run: "+wm.run());
-      Serial.println();
+      Serial.print("wm run: "); Serial.println(wm.run());
+      Serial.print("");
 
-      //while (WiFi.status() != WL_CONNECTED && try_cnt < MAX_CONNECT_TIME / WIFI_DELAY) {
       while (wm.run() != WL_CONNECTED && try_cnt < MAX_CONNECT_TIME / WIFI_DELAY) {
         delay(WIFI_DELAY);
         Serial.print(".");
         try_cnt++;
       }
-      //if (WiFi.status() == WL_CONNECTED) {
-      //if (wm.run() == WL_CONNECTED) {
-      while (wm.run() == WL_CONNECTED) {
-        Serial.println("");
-        Serial.println("WiFi connected");
-        Serial.println("IP address: ");
-        Serial.println(WiFi.localIP());
-
-        HTTPClient http;
-        // Performs GET request to ask for any incomplete tasks
-        http.begin("http://iesc-s3.mit.edu/breadboard/deviceInquiry?dev_id=123");
-        int httpCode = http.GET();
-        http.end();
-        if (httpCode > 0) {
-
-          String payload = http.getString();
-          Serial.println(payload);
-
-          // }
-
-          //   http.end();
-          int current_index = 0;
-          int new_index = payload.indexOf("&", current_index);
-          int task_id = payload.substring(current_index, new_index).toInt();
-          String task = payload.substring(new_index);
-
-          if (task == "ALL") //Understands the type of request
-          {
-            StaticJsonBuffer<300> JSONbuffer;
-            JsonObject& JSONencoder = JSONbuffer.createObject();
-
-            JSONencoder["sensorType"] = "Temperature";
-
-            JsonArray& values = JSONencoder.createNestedArray("values");
-            values.add(20);
-            values.add(21);
-            values.add(23);
-
-            JsonArray& timestamps = JSONencoder.createNestedArray("timestamps");
-            timestamps.add("10:10");
-            timestamps.add("10:20");
-            timestamps.add("10:30");
-
-            char JSONmessageBuffer[300];
-            JSONencoder.prettyPrintTo(JSONmessageBuffer, sizeof(JSONmessageBuffer));
-            Serial.println(JSONmessageBuffer);
-
-            HTTPClient http;
-
-            //POSTs to the specified URL the data from the calculations
-            http.begin("http://iesc-s3.mit.edu/breadboard/reportValues");
-            http.addHeader("Content-Type", "application/json");
-
-            int httpCode = http.POST(JSONmessageBuffer);
-            String payload = http.getString();
-
-            Serial.println("httpCode: ");
-            Serial.println(httpCode);
-            Serial.println("payLoad: ");
-            Serial.println(payload);
-
-            http.end();
-          }
-        }
-
-        delay(3000);
-      } //else {
-
-        Serial.println("Error in WiFi connection");
-
-      //}
-
-      delay(3000);
+      Serial.println("");
+      Serial.println("WiFi connected");
+      Serial.println("IP address: ");
+      Serial.println(WiFi.localIP());
     }
 
-    else {
-      Serial.println("Cannot established connection on given time.");
-    }
-  } else {
-    Serial.println("No non-encrypted WiFi found.");
+    delay(3000);
   }
+  //Serial.println("Error in WiFi connection");
+  //delay(3000);
+
+  else {
+    Serial.println("Cannot establish connection on given time.");
+    delay(3000);
+  }
+
+  while (wm.run() == WL_CONNECTED) { //&& clock()-currentTime >= 2000){
+
+    HTTPClient http;
+    WiFiClient client;
+    String op = "";
+    //int taskdone = 0;
+    String response = "";
+
+    if (!client.connect("iesc-s3.mit.edu", 80)) {
+      Serial.println("connection to server failed");
+    }
+    else {
+
+      client.println("GET http://iesc-s3.mit.edu/breadboard/deviceInquiry?dev_id=123 HTTP/1.1");
+      client.println("Host: iesc-s3.mit.edu");
+      client.println("\r\n\r\n");
+
+      unsigned long count = millis();
+      while (client.connected()) {
+        String line = client.readStringUntil('\n');
+        Serial.print(line);
+        if (line == "\r") {
+          Serial.println("headers received");
+          break;
+        }
+        if (millis() - count > 4000) break;
+      }
+      Serial.print("-----------");
+      Serial.print("\n");
+      Serial.print("Response...");
+      count = millis();
+      while (!client.available()) {
+        delay(100);
+        Serial.print(".");
+        if (millis() - count > 4000) break;
+      }
+      Serial.println();
+      //String op;
+      while (client.available()) {
+        op += (char)client.read();
+      }
+      Serial.println(op);
+      client.stop();
+      Serial.println("closing connection");
+    }
+
+    if (op.indexOf("No") != -1) {
+      //pass
+      Serial.println("No Task");
+      delay(2000);
+    }
+    else {
+
+      int current_index = 0;
+      int star_index = 0;
+      String task_id = op.substring(0, op.indexOf("&"));//.toInt();
+      String task = op.substring(op.indexOf("&") + 1);
+      String node;
+      String sampleRate;
+      String numSamples;
+      /*
+         Format of task(s):
+
+         ALL
+         SINGLE*node*sampleRate*#ofSamples
+         ALLMULTI*sampleRate*#ofSamples
+      */
+
+      Serial.print("Task ID: ");
+      Serial.println(task_id);
+      //Serial.println("raw task id: "+op.substring(0, op.indexOf("&")));
+      Serial.print("");
+      Serial.print("Task: ");
+      Serial.println(task);
+
+      if (task == "ALL") {
+        //POST
+//        client.println("POST http://iesc-s3.mit.edu/breadboard/reportValues HTTP/1.1");
+//        client.println("Host: iesc-s3.mit.edu");
+//        client.println("Content-Type: application/x-www-form-urlencoded");
+//        client.println("");
+//        client.println("value=abc&dev_id=123&task_id=123123123");
+//        client.println("\r\n\r\n");
+
+        response = "A:1,2,3";
+      }
+      else if (task.indexOf("SINGLE") != -1) {
+        //try{
+        star_index = task.indexOf("*");
+        node = task.substring(star_index + 1, task.indexOf("*", star_index + 1));
+        star_index = task.indexOf("*", star_index + 1);
+        sampleRate = task.substring(star_index + 1, task.indexOf("*", star_index + 1));
+        star_index = task.indexOf("*", star_index + 1);
+        numSamples = task.substring(star_index + 1);
+
+        Serial.print("Node: "); Serial.println(node.toInt());
+        Serial.print("Sample rate: "); Serial.println(sampleRate.toInt());
+        Serial.print("Number of Samples: "); Serial.println(numSamples.toInt());
+        Serial.print("SINGLE");
+
+        response = "S:4,5,6";
+        //              }
+        //              catch(Exception e){
+        //                Serial.println("Syntax error");
+        //              }
+      }
+      else if (task.indexOf("MULTI") != -1) {
+        star_index = task.indexOf("*");
+        sampleRate = task.substring(star_index + 1, task.indexOf("*", star_index + 1));
+        star_index = task.indexOf("*", star_index + 1);
+        numSamples = task.substring(star_index + 1);
+
+        Serial.print("Sample rate: "); Serial.println(sampleRate.toInt());
+        Serial.print("Number of Samples: "); Serial.println(numSamples.toInt());
+        Serial.print("ALLMULTI");
+
+        response = "M:7,8,9";
+      }
+      else {
+        Serial.print("Task ID/Task not recognized");
+      }
+
+      if (response.length() > 0) {
+        //breadboard/deviceInquiry?dev_id=123
+
+        String dict = "{\"dev_id\": \"123\", \"task_id\": \""+task_id+"\", \"values\": \""+response+"\"}";
+
+
+        http.begin("http://iesc-s3.mit.edu/breadboard/reportValues");
+        http.addHeader("Content-Type", "application/json");
+        //http.POST("{\"dev_id\": \"123\", \"task_id\": \"151742017254111\", \"values\": \"A:1,2,3\"}");
+        http.POST(dict);
+//        client.println("POST http://iesc-s3.mit.edu/breadboard/reportValues HTTP/1.1");
+//        client.println("Host: iesc-s3.mit.edu");
+//        client.println("Content-Type: application/json");
+//        client.println();
+
+//        client.println("{\"dev_id: \"123\", \"task_id\": \"");
+//        client.println(task_id); client.println("\", \"values\": \"");
+//        client.println(response); client.println("\"}");
+        //client.println("{\"dev_id\": \"123\", \"task_id\": \"151742017254111\", \"values\": \"A:1,2,3\"}");
+        //client.println(dict);
+        //client.println("\r\n\r\n");
+
+        op = "";
+        op = http.getString();
+        Serial.print(dict);
+        Serial.print("\nPost Response: "); Serial.println(op);
+
+        /*unsigned long count = millis();
+        while (client.connected()) {
+          String line = client.readStringUntil('\n');
+          Serial.print(line);
+          if (line == "\r") {
+            Serial.println("headers received");
+            break;
+          }
+          if (millis() - count > 4000) break;
+        }
+        Serial.print("\n");
+        Serial.print("POST Response...");
+        count = millis();
+        while (!client.available()) {
+          delay(100);
+          Serial.print(".");
+          if (millis() - count > 4000) break;
+        }
+        Serial.println();
+        //String op;
+        while (client.available()) {
+          op += (char)client.read();
+        }
+        Serial.print(op);
+        client.stop();
+        Serial.print("closing connection \n");*/
+
+        if (op.length() > 0){
+          Serial.print("\nsomething posted");
+          if (op.indexOf("SUCCESS") != -1)
+            Serial.print("\nPOST completed successfully!");
+        }
+        else{
+          Serial.print("error in POST\n");
+        }
+        }
+      }
+    }
+    //currentTime = clock();
 }
+/*else {
+  Serial.println("No non-encrypted WiFi found.");
+  } */
+
+//}
